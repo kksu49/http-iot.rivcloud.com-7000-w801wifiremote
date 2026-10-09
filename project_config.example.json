@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "wifi": {
+    "ssid": "YOUR_WIFI_SSID",
+    "password": "YOUR_WIFI_PASSWORD"
+  },
+  "iot": {
+    "management_base_url": "http://iot.rivcloud.com:7000/prod-api",
+    "authentication": "preset_token_auto_renew",
+    "token": "Bearer REPLACE_WITH_TOKEN",
+    "account": "REPLACE_WITH_ACCOUNT",
+    "password_md5": "00000000000000000000000000000000",
+    "product_name": "YOUR_PRODUCT",
+    "product_key": "REPLACE_WITH_PRODUCT_KEY",
+    "product_secret": "REPLACE_WITH_PRODUCT_SECRET",
+    "device_id": 1,
+    "imei": "000000000000000",
+    "product_id": 1,
+    "protocol": "tcp",
+    "tcp_access_host": "iot.rivcloud.com",
+    "tcp_access_port": 2261,
+    "device_authentication_enabled": true,
+    "base64_enabled": false
+  },
+  "board": {
+    "model": "HLK-W801",
+    "flash_port": "COM10",
+    "flash_baud": 115200,
+    "debug_uart_baud": 115200,
+    "buttons": [
+      "PA0",
+      "PA1",
+      "PA2",
+      "PA3",
+      "PA4",
+      "PA5",
+      "PA6",
+      "PA7",
+      "PA8",
+      "PA9"
+    ],
+    "actions": "abcdefghij",
+    "receiver_outputs": [
+      "PB5",
+      "PB25",
+      "PB26",
+      "PB18",
+      "PB17",
+      "PB16",
+      "PB11",
+      "PB0",
+      "PB1",
+      "PB2"
+    ],
+    "on_level": 0,
+    "pulse_ms": 1000,
+    "receiver_uart": 5,
+    "receiver_rx": "PA13",
+    "receiver_tx": "PA12",
+    "receiver_baud": 115200,
+    "receiver_data_bits": 8,
+    "receiver_stop_bits": 1,
+    "receiver_parity": "none",
+    "output_on_levels": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      1
+    ],
+    "serial_heartbeat_interval_ms": 30000,
+    "serial_heartbeat_payload": "HB,W801\r\n"
+  },
+  "behavior": {
+    "optional_ack": true,
+    "ack_tracking_capacity": 10,
+    "ack_tracking_seconds": 20,
+    "button_queue_capacity": 31,
+    "queued_command_max_age_seconds": 5,
+    "automatic_control_retry": false
+  },
+  "notes": [
+    "Token 过期后固件自动重新登录；认证方式和行为字段部分为部署记录。",
+    "板载 a~g LED 低电平有效，h~j 外接输出高电平有效。",
+    "实际配置、日志和固件只保留本机，不提交 GitHub。"
+  ],
+  "provisioning": {
+    "enabled": true,
+    "button_gpio": "PA10",
+    "hold_seconds": 5,
+    "wifi_timeout_seconds": 45,
+    "ap_ssid_prefix": "W801-Setup-",
+    "ap_password": "CHANGE_ME_123",
+    "ip": "192.168.4.1",
+    "web_port": 8080
+  },
+  "dtu_link": {
+    "current_interface": "01/02 DEBUG TTL; diagnostic only",
+    "production_interface": "03/04 RS232 through 3.3V TTL converter",
+    "actual_business_baud": 9600,
+    "actual_business_mode": 2,
+    "heartbeat": {
+      "enabled": true,
+      "period_seconds": 30,
+      "payload": "HB,000000000000000",
+      "verified_uplink_count": 2
+    },
+    "automatic_power_recovery": "requires external controlled DTU power circuit; not installed or validated"
+  }
+}
