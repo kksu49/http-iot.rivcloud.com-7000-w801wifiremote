@@ -75,7 +75,7 @@
     ],
     "serial_heartbeat_interval_ms": 30000,
     "serial_heartbeat_payload": "HB,W801\r\n",
-    "serial_sender_mac": ""
+    "transport_select_gpio": "PA11"
   },
   "behavior": {
     "optional_ack": true,

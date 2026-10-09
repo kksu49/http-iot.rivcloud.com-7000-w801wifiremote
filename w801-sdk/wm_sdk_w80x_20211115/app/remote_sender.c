@@ -319,10 +319,18 @@ static void keys_entry(void *arg) {
     }
 }
 void remote_sender_start(void) {
-    u8 mac[6];char text[13];tls_get_mac_addr(mac);
+    unsigned i,low_samples=0;u8 mac[6];char text[13];tls_get_mac_addr(mac);
     snprintf(text,sizeof(text),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
-    serial_sender=REMOTE_SERIAL_SENDER_MAC[0]&&!strcmp(text,REMOTE_SERIAL_SENDER_MAC);
-    printf("BUTTON_TRANSPORT %s mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",text);
+    tls_gpio_cfg(REMOTE_TRANSPORT_SELECT_PIN,WM_GPIO_DIR_INPUT,WM_GPIO_ATTR_PULLHIGH);
+    /* Sample only at boot. Floating/unstable wiring defaults to WiFi; changing
+       transport requires a reset so queued actions cannot cross transports. */
+    tls_os_time_delay(HZ/100?HZ/100:1);
+    for(i=0;i<5;i++){
+        if(!tls_gpio_read(REMOTE_TRANSPORT_SELECT_PIN))low_samples++;
+        tls_os_time_delay(HZ/100?HZ/100:1);
+    }
+    serial_sender=low_samples==5;
+    printf("BUTTON_TRANSPORT %s select_pin_enum=%d low_samples=%u/5 mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",(int)REMOTE_TRANSPORT_SELECT_PIN,low_samples,text);
     authenticated=1;
     printf("\nREMOTE_W801_SENDER_V0.8: PA0..PA9 => a..j; optional ACK\n");
     tls_os_task_create(&net_task,"remote_net",network_entry,0,(u8*)net_stack,sizeof(net_stack),33,0);

@@ -9,7 +9,8 @@ def pin(v):
     n=int(v[2:])
     if n>(15 if v[1]=='A' else 31):raise ValueError('Invalid GPIO range')
     return 'WM_IO_P'+v[1]+'_'+str(n).zfill(2)
-allpins=b['buttons']+b['receiver_outputs']+[b['receiver_rx'],b['receiver_tx'],c['provisioning']['button_gpio']]
+role_pin=b.get('transport_select_gpio','PA11')
+allpins=b['buttons']+b['receiver_outputs']+[b['receiver_rx'],b['receiver_tx'],c['provisioning']['button_gpio'],role_pin]
 if len(b['buttons'])!=10 or len(b['receiver_outputs'])!=10 or len(set(allpins))!=len(allpins):raise ValueError('GPIO conflict or invalid channel count')
 if {'PB19','PB20'}&set(allpins):raise ValueError('Download UART pins reserved')
 if b['receiver_uart']!=5 or b['receiver_data_bits']!=8 or b['receiver_stop_bits']!=1 or b['receiver_parity']!='none':raise ValueError('This adapter supports UART5 8N1')
@@ -35,6 +36,4 @@ levels=b.get('output_on_levels',[b['on_level']]*10)
 if len(levels)!=10 or any(v not in (0,1) for v in levels):raise ValueError('Invalid per-channel output levels')
 with (app/'remote_board.h').open('a',encoding='utf-8') as f:f.write('#define REMOTE_OUTPUT_LEVELS {'+','.join(str(v) for v in levels)+'}\n')
 print('Firmware configuration generated; secrets omitted')
-serial_mac=b.get('serial_sender_mac','')
-if serial_mac and not re.fullmatch(r'[0-9a-fA-F]{12}',serial_mac):raise ValueError('Invalid serial sender MAC')
-with (app/'remote_board.h').open('a',encoding='utf-8') as f:f.write('#define REMOTE_SERIAL_SENDER_MAC '+json.dumps(serial_mac.lower())+'\n')
+with (app/'remote_board.h').open('a',encoding='utf-8') as f:f.write('#define REMOTE_TRANSPORT_SELECT_PIN '+pin(role_pin)+'\n')
