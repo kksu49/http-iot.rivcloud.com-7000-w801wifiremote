@@ -32,6 +32,35 @@ static char pending_id[10][64],pending_action[10];
 static unsigned pending_since[10];
 static volatile unsigned connection_epoch;
 static const enum tls_io_name keys[]=REMOTE_BUTTON_PINS;
+extern int remote_serial_button(char action);
+extern int remote_link_enqueue(const char *frame,int serial);
+static int serial_sender;
+static int success(cJSON *root);
+static void reverse_rows(cJSON *root) {
+ static double cursor;
+ static unsigned epoch;
+ static int baseline;
+ cJSON *rows,*row,*id,*type,*data;double newest=cursor;int i,count;
+ if(!success(root))return;
+ rows=cJSON_GetObjectItem(root,"rows");if(!rows||rows->type!=cJSON_Array)return;
+ if(epoch!=connection_epoch){baseline=0;epoch=connection_epoch;}
+ count=cJSON_GetArraySize(rows);
+ for(i=0;i<count;i++){row=cJSON_GetArrayItem(rows,i);id=cJSON_GetObjectItem(row,"id");if(id&&id->type==cJSON_Number&&id->valuedouble>newest)newest=id->valuedouble;}
+ if(!baseline){cursor=newest;baseline=1;printf("REVERSE_BASELINE_READY\n");return;}
+ /* Platform returns newest first; consume oldest first, at most 20 per poll. */
+ for(i=count-1;i>=0;i--){
+  char frame[96];size_t n;
+  row=cJSON_GetArrayItem(rows,i);id=cJSON_GetObjectItem(row,"id");type=cJSON_GetObjectItem(row,"recType");data=cJSON_GetObjectItem(row,"dataText");
+  if(!id||id->type!=cJSON_Number||id->valuedouble<=cursor||!type||!type->valuestring||strcmp(type->valuestring,"uplink")||!data||!data->valuestring)continue;
+  if(strncmp(data->valuestring,"REV,",4))continue;
+  n=strlen(data->valuestring);if(n<7||n>93)continue;
+  strcpy(frame,data->valuestring);memcpy(frame,"CMD,",4);
+  if(frame[n-1]!='\n'){frame[n++]='\n';frame[n]=0;}
+  printf("REVERSE_COMMAND %s",frame);
+  if(!remote_link_enqueue(frame,0))printf("REVERSE_QUEUE_FULL_DROPPED\n");
+ }
+ cursor=newest;
+}
 static void expire_auth(unsigned generation) {
     u32 lock=tls_os_set_critical();
     if(generation==auth_generation){authenticated=0;device_ready=0;queue_tail=queue_head;memset(pending_action,0,sizeof(pending_action));}
@@ -203,9 +232,10 @@ static void send_action(char action) {
 static void poll_pending(void) {
     char url[256];cJSON *root;int i,any=0;
     for(i=0;i<10;i++)if(pending_action[i])any=1;
-    if(!any)return;
+    if(!any&&serial_sender)return;
     snprintf(url,sizeof(url),BASE "/reach/dmp/deviceData/list/?pageNum=1&pageSize=20&imei=%s&productId=%d&recType=uplink",target_imei,target_product);
     root=request_buffer(url,0,1,ack_reply,sizeof(ack_reply));
+    if(!serial_sender)reverse_rows(root);
     for(i=0;i<10;i++)if(pending_action[i]) {
         char id[64],action;unsigned since;int matched,expired,cleared=0;
         u32 lock=tls_os_set_critical();
@@ -270,6 +300,7 @@ static void keys_entry(void *arg) {
             if(!armed[i])continue;
             if(++count[i]<3)continue;
             armed[i]=0;
+            if(serial_sender){printf(remote_serial_button('a'+i)?"KEY %c SERIAL_QUEUED\n":"KEY %c SERIAL_NOT_QUEUED\n",'a'+i);continue;}
             if(!ip_ready||!authenticated||!device_ready)printf("KEY %c REJECTED_OFFLINE\n",'a'+i);
             else {
                 int added=0;u32 lock=tls_os_set_critical();
@@ -288,6 +319,10 @@ static void keys_entry(void *arg) {
     }
 }
 void remote_sender_start(void) {
+    u8 mac[6];char text[13];tls_get_mac_addr(mac);
+    snprintf(text,sizeof(text),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+    serial_sender=REMOTE_SERIAL_SENDER_MAC[0]&&!strcmp(text,REMOTE_SERIAL_SENDER_MAC);
+    printf("BUTTON_TRANSPORT %s mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",text);
     authenticated=1;
     printf("\nREMOTE_W801_SENDER_V0.8: PA0..PA9 => a..j; optional ACK\n");
     tls_os_task_create(&net_task,"remote_net",network_entry,0,(u8*)net_stack,sizeof(net_stack),33,0);

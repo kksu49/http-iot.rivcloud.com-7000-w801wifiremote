@@ -2,6 +2,20 @@
 
 当前版本：2026-10-09，支持自动认证续期、串口心跳和 1 秒 LED 输出。
 
+## 双向控制扩展（2026-10-10）
+
+正向稳定源码已保留在 GitHub 标签 `stable-forward-20261010`；本机 `backups/forward-20261010` 保存改动前固件、私有配置和源码 ZIP。以下扩展需现场双向验证，不能视为已经完成端到端验收。
+
+两块板使用同一固件，在私有配置 `board.serial_sender_mac` 填写 DTU 板的 12 位 MAC（小写、无分隔符）。该板 PA0～PA9 按钮仅走 UART5；其他板按钮继续走 WiFi HTTP 下发。模板默认空字符串，保持原来的 WiFi 按钮行为。当前本机配置指定 MAC `286dcdce69cd`（历史 COM4）为 DTU 板，MAC `286dcdce9373`（历史 COM5）为 WiFi 板。换板需更新角色 MAC 并重新编译。
+
+反向路径：DTU 板按键 → PA12 UART5 输出 `REV,<唯一ID>,<a-j>\n` → DTU 将串口载荷上传平台 → WiFi 板每约 2 秒查询目标 DTU 的上行记录 → 转成内部控制帧交给原有接收核心 → 对应 LED 点亮 1 秒。GPIO 映射与下表一致；a～g 为板载 LED，h～j 为外接输出。串口上传不能等待 WiFi 或平台 Token，按键不直接点亮本机 LED。
+
+首次成功查询和 WiFi 重连后的首次查询仅建立记录 ID 基线，不执行历史命令；仅消费新增 uplink 中的 REV 帧，忽略 ACK、HB 和 downlink。平台查询与原正向按键发送分属独立任务；执行队列由原串口接收任务独占，避免并发访问接收核心。队列满、排队超过 5 秒的命令丢弃并记录日志，不补发。当前每次读取最近 20 条上行，离线期间命令不补执行；HTTP 延迟、上行频繁或网络故障可能导致延迟/遗漏，不保证实时或百分之百送达。
+
+日志：DTU 板 `BUTTON_TRANSPORT DTU_UART`、`KEY x SERIAL_QUEUED`、`REVERSE_UART_TX QUEUED`；WiFi 板 `BUTTON_TRANSPORT WIFI_HTTP`、`REVERSE_BASELINE_READY`、`REVERSE_COMMAND`、`REVERSE_PLATFORM_RX`、`RX_GPIO`。UART QUEUED 仅表示驱动接收了发送请求，必须看到平台新增 REV 上行才能证明 DTU 上传成功。现有 01/02 调试口是否支持此业务上传尚需实测；若不上行，应使用厂家支持的业务串口并添加正确电平转换，不能只靠修改 W801 代码解决。
+
+测试：`python test_reverse_rows.py` 验证真实轮询函数的历史基线、重复过滤、方向过滤、心跳/回执忽略、重连行为；原有接收核心测试验证 1 秒复位及串口协议。`python monitor_bidirectional.py --ports COM4 COM5 --seconds 60` 只读取 USB 调试日志，不向板发送控制字节。需安装 pyserial。
+
 同一套固件包含发送与接收功能。发送端按钮接地后经 Wi-Fi 调用 IOT 平台下发接口；接收端经 DTU 串口接收完整控制帧，驱动对应 GPIO，定时结束后通过串口输出回执。按键本身不直接驱动本机执行输出；同一块板若同时连接 DTU，也可能收到自己经平台返回的指令。
 
 ## GPIO 接线

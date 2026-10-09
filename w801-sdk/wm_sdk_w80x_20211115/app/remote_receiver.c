@@ -3,6 +3,27 @@
 #include "receiver_core.h"
 #include "remote_board.h"
 #include <string.h>
+#include "random.h"
+static char link_frames[32][96];
+static unsigned link_stamp[32],link_head,link_tail;
+static unsigned char link_serial[32];
+static volatile int link_ready;
+int remote_link_enqueue(const char *frame,int serial) {
+ unsigned next;u32 lock;
+ if(!frame||strlen(frame)>=96||!link_ready)return 0;
+ lock=tls_os_set_critical();next=(link_head+1)%32;
+ if(next==link_tail){tls_os_release_critical(lock);return 0;}
+ strcpy(link_frames[link_head],frame);link_serial[link_head]=serial;
+ link_stamp[link_head]=tls_os_get_time();link_head=next;
+ tls_os_release_critical(lock);return 1;
+}
+int remote_serial_button(char action) {
+ static unsigned seq,session;u8 mac[6];char frame[96];
+ if(!session&&(random_get_bytes(&session,sizeof(session))!=0||!session))return 0;
+ tls_get_mac_addr(mac);
+ snprintf(frame,sizeof(frame),"REV,%02x%02x%02x%02x%02x%02x-%08lx-%08lx-%u,%c\n",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],(unsigned long)session,(unsigned long)tls_os_get_time(),++seq,action);
+ return remote_link_enqueue(frame,1);
+}
 static receiver_core core;
 static OS_STK receiver_stack[1024];
 static tls_os_task_t receiver_task;
@@ -34,12 +55,23 @@ static void receiver_entry(void *arg) {
  if(tls_uart_port_init(TLS_UART_5,&opt,0)!=WM_SUCCESS){printf("RECEIVER_UART_INIT_FAILED (outputs low)\n");return;}
  printf("RECEIVER_READY UART5 rx_enum=%d tx_enum=%d baud=%d pulse=%dms on=%d\n",(int)REMOTE_UART_RX_PIN,(int)REMOTE_UART_TX_PIN,REMOTE_UART_BAUD,REMOTE_PULSE_MS,REMOTE_OUTPUT_ON);
  last_tick=tls_os_get_time();
+ link_ready=1;
  for(;;){
   uint32_t ticks=tls_os_get_time();
   /* Millisecond clock derived from OS ticks; unsigned subtraction survives wrap. */
   uint64_t scaled=(uint64_t)(uint32_t)(ticks-last_tick)*1000+fraction;
   now+=(uint32_t)(scaled/HZ);fraction=scaled%HZ;last_tick=ticks;
   receiver_tick(&core,now);
+  {
+   char frame[96];unsigned stamp=0;int serial=0,got=0;u32 lock=tls_os_set_critical();
+   if(link_tail!=link_head){strcpy(frame,link_frames[link_tail]);stamp=link_stamp[link_tail];serial=link_serial[link_tail];link_tail=(link_tail+1)%32;got=1;}
+   tls_os_release_critical(lock);
+   if(got){
+    if((unsigned)(ticks-stamp)>5*HZ)printf("LINK_STALE_DROPPED\n");
+    else if(serial){int result=tls_uart_write(TLS_UART_5,frame,strlen(frame));printf("REVERSE_UART_TX %s frame=%s",result==WM_SUCCESS?"QUEUED":"FAILED",frame);}
+    else {printf("REVERSE_PLATFORM_RX frame=%s",frame);receiver_feed(&core,(const unsigned char*)frame,strlen(frame),now);}
+   }
+  }
   if(REMOTE_SERIAL_HEARTBEAT_MS && (uint32_t)(now-last_heartbeat)>=REMOTE_SERIAL_HEARTBEAT_MS){
    static char heartbeat[]="HB,W801\r\n";
    int result=tls_uart_write(TLS_UART_5,heartbeat,sizeof(heartbeat)-1);
