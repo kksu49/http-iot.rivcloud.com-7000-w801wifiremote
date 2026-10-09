@@ -18,6 +18,12 @@
 
 本次实测：两块板烧录完成；COM5 多次 a～i 正向动作经过平台、DTU 到 COM4，板载输出按极性切换并约 1 秒复位。COM4 的 f/e 按键已生成唯一 REV 帧并提交 UART5，但随后查询最近 50 条 uplink 得到 REV_COUNT=0，因此反向完整链路未通过。手册 `DLA80-485DL` 明确 01/02 为 DEBUG-RX/TX，透传接口模式仅列 RS485/RS232；当前调试口连接未证明能够上传业务帧。下一步须验证业务串口接线、电平转换、两端波特率以及 REV 上行，保留稳定标签以便回退。
 
+后续排查回读确认：`transUartMode=2`（RS232）、业务口 `baudrate=9600`，Modbus switch=0，TCP 服务正常；最近 100 条 uplink 仅有 DTU 自身心跳。W801 为 115200，与业务口不同。SDK 的 UART 写入函数会复制发送缓冲，因此当前局部帧缓冲生命周期不是已发现的故障。不能将看到调试口下行日志当成业务透传接口已接通。
+
+业务接线修复：DTU 03 TXD → RS232/3.3V TTL 转换模块 → W801 PA13 RX；W801 PA12 TX → 转换模块 → DTU 04 RXD；共地。不能直接连接 RS232 与 GPIO。先执行 `python configure_dtu_business_uart.py` 仅读取；安装转换模块并完成业务接线后，再执行 `python configure_dtu_business_uart.py --apply`，保存原始参数并将 DTU 业务口波特率设成配置中 W801 的 115200，随后回读验证。脚本不更改透传模式，不恢复出厂，不重启 DTU。硬件未安装时尚未执行 apply，正向调试路径仍保持现状。
+
+`python inspect_dtu_upload.py` 仅读取当前设备配置及最近上行；诊断 JSON 仅保留本机。以上平台脚本使用本机预置 Token；若该 Token 过期，需更新本机配置，不能据此判断 DTU 离线。验收必须包括：COM4 的 REV 实际出现在平台 uplink、COM5 的 REVERSE_PLATFORM_RX 与 GPIO 1 秒动作，以及 COM5→COM4 正向回归。
+
 同一套固件包含发送与接收功能。发送端按钮接地后经 Wi-Fi 调用 IOT 平台下发接口；接收端经 DTU 串口接收完整控制帧，驱动对应 GPIO，定时结束后通过串口输出回执。按键本身不直接驱动本机执行输出；同一块板若同时连接 DTU，也可能收到自己经平台返回的指令。
 
 ## GPIO 接线
