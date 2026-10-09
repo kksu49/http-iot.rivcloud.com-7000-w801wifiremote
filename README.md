@@ -1,6 +1,6 @@
 # W801 Wi-Fi 遥控与 DTU 接收执行
 
-当前版本：2026-10-09，支持自动认证续期、串口心跳和 1 秒 LED 输出。
+当前分支：2026-10-10 双向扩展；正向稳定版本为 2026-10-09，支持自动认证续期、串口心跳和 1 秒 LED 输出。
 
 ## 双向控制扩展（2026-10-10）
 
@@ -15,6 +15,8 @@
 日志：DTU 板 `BUTTON_TRANSPORT DTU_UART`、`KEY x SERIAL_QUEUED`、`REVERSE_UART_TX QUEUED`；WiFi 板 `BUTTON_TRANSPORT WIFI_HTTP`、`REVERSE_BASELINE_READY`、`REVERSE_COMMAND`、`REVERSE_PLATFORM_RX`、`RX_GPIO`。UART QUEUED 仅表示驱动接收了发送请求，必须看到平台新增 REV 上行才能证明 DTU 上传成功。现有 01/02 调试口是否支持此业务上传尚需实测；若不上行，应使用厂家支持的业务串口并添加正确电平转换，不能只靠修改 W801 代码解决。
 
 测试：`python test_reverse_rows.py` 验证真实轮询函数的历史基线、重复过滤、方向过滤、心跳/回执忽略、重连行为；原有接收核心测试验证 1 秒复位及串口协议。`python monitor_bidirectional.py --ports COM4 COM5 --seconds 60` 只读取 USB 调试日志，不向板发送控制字节。需安装 pyserial。
+
+本次实测：两块板烧录完成；COM5 多次 a～i 正向动作经过平台、DTU 到 COM4，板载输出按极性切换并约 1 秒复位。COM4 的 f/e 按键已生成唯一 REV 帧并提交 UART5，但随后查询最近 50 条 uplink 得到 REV_COUNT=0，因此反向完整链路未通过。手册 `DLA80-485DL` 明确 01/02 为 DEBUG-RX/TX，透传接口模式仅列 RS485/RS232；当前调试口连接未证明能够上传业务帧。下一步须验证业务串口接线、电平转换、两端波特率以及 REV 上行，保留稳定标签以便回退。
 
 同一套固件包含发送与接收功能。发送端按钮接地后经 Wi-Fi 调用 IOT 平台下发接口；接收端经 DTU 串口接收完整控制帧，驱动对应 GPIO，定时结束后通过串口输出回执。按键本身不直接驱动本机执行输出；同一块板若同时连接 DTU，也可能收到自己经平台返回的指令。
 
