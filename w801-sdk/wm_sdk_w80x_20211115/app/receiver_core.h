@@ -2,7 +2,7 @@
 #define RECEIVER_CORE_H
 #include <stdint.h>
 #define RX_ID_SIZE 64
-typedef struct {char id[RX_ID_SIZE];char action;unsigned char state;} rx_record;
+typedef struct {char id[RX_ID_SIZE];char action;unsigned char state,compact;} rx_record;
 typedef struct {
  char line[96];unsigned length;int discard;
  rx_record records[32];unsigned next;

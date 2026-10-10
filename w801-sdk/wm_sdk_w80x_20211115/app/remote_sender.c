@@ -12,6 +12,7 @@
 #include "remote_session.h"
 #include "remote_board.h"
 #include "wifi_provision.h"
+#include "short_frame.h"
 
 #define BASE "http://iot.rivcloud.com:7000/prod-api"
 #define IMEI DEPLOY_IMEI
@@ -52,9 +53,12 @@ static void reverse_rows(cJSON *root) {
   char frame[96];size_t n;
   row=cJSON_GetArrayItem(rows,i);id=cJSON_GetObjectItem(row,"id");type=cJSON_GetObjectItem(row,"recType");data=cJSON_GetObjectItem(row,"dataText");
   if(!id||id->type!=cJSON_Number||id->valuedouble<=cursor||!type||!type->valuestring||strcmp(type->valuestring,"uplink")||!data||!data->valuestring)continue;
-  if(strncmp(data->valuestring,"REV,",4))continue;
   n=strlen(data->valuestring);if(n<7||n>93)continue;
-  strcpy(frame,data->valuestring);memcpy(frame,"CMD,",4);
+  strcpy(frame,data->valuestring);
+  while(n&&(frame[n-1]=='\n'||frame[n-1]=='\r'||frame[n-1]==' '||frame[n-1]=='\t'))frame[--n]=0;
+  if(short_control(frame,'R'))frame[0]='C';
+  else if(!strncmp(frame,"REV,",4))memcpy(frame,"CMD,",4);
+  else continue;
   if(frame[n-1]!='\n'){frame[n++]='\n';frame[n]=0;}
   printf("REVERSE_COMMAND %s",frame);
   if(!remote_link_enqueue(frame,0))printf("REVERSE_QUEUE_FULL_DROPPED\n");
@@ -203,7 +207,12 @@ static int ack_matches(cJSON *root,char *id,char action) {
         type=cJSON_GetObjectItem(row,"recType");device=cJSON_GetObjectItem(row,"imei");
         if(!type||!type->valuestring||strcmp(type->valuestring,"uplink"))continue;
         if(device&&device->valuestring&&strcmp(device->valuestring,IMEI))continue;
-        if(!data||!data->valuestring||strncmp(data->valuestring,prefix,strlen(prefix)))continue;
+        if(!data||!data->valuestring)continue;
+        if(short_valid_id(id)){
+            snprintf(expected,sizeof(expected),"K%c%s",action,id);
+            if(!strncmp(data->valuestring,expected,strlen(expected))&&(!data->valuestring[strlen(expected)]||!strcmp(data->valuestring+strlen(expected),"\n")||!strcmp(data->valuestring+strlen(expected),"\r\n")))return 1;
+        }
+        if(strncmp(data->valuestring,prefix,strlen(prefix)))continue;
         snprintf(expected,sizeof(expected),"%sTIMER,%d,DONE",prefix,index+1);
         if(!strcmp(data->valuestring,expected)||(!strncmp(data->valuestring,expected,strlen(expected))&&!strcmp(data->valuestring+strlen(expected),"\n")))return 1;
         snprintf(expected,sizeof(expected),"%sLATCH,%d,%s",prefix,index/2+1,index%2?"OFF":"ON");
@@ -213,10 +222,11 @@ static int ack_matches(cJSON *root,char *id,char action) {
 }
 static void send_action(char action) {
     char url[512],id[64];cJSON *root;int i,accepted;
-    /* MAC + tick + sequence distinguish concurrent button transactions. */
+    /* Retain full MAC/session/sequence while omitting redundant separators/tick. */
     u8 mac[6]; tls_get_mac_addr(mac);
-    snprintf(id,sizeof(id),"%02x%02x%02x%02x%02x%02x-%08lx-%08lx-%u",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],(unsigned long)session_id,(unsigned long)tls_os_get_time(),++sequence);
-    snprintf(url,sizeof(url),BASE "/reach/tcp/devices/downlink?imei=%s&productKey=%s&sendData=CMD%%2C%s%%2C%c%%0A&sendDataType=text",target_imei,target_key,id,action);
+    if(sequence==0xffffffffu){session_id=0;sequence=0;if(random_get_bytes(&session_id,sizeof(session_id))!=0||!session_id){printf("SESSION_RANDOM_RETRY\n");return;}}
+    short_id(id,mac,session_id,++sequence);
+    snprintf(url,sizeof(url),BASE "/reach/tcp/devices/downlink?imei=%s&productKey=%s&sendData=C%c%s%%0A&sendDataType=text",target_imei,target_key,action,id);
     printf("TX_ACTION gpio=PA%d ascii=%d action=%c id=%s\n",action-'a',(int)action,action,id);
     root=request(url,1,1);accepted=success(root);cJSON_Delete(root);
     if(!accepted){printf("SEND_NOT_CONFIRMED %c (no automatic retry; execution may be unknown)\n",action);return;}

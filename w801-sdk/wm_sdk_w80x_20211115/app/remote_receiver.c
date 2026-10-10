@@ -4,6 +4,7 @@
 #include "remote_board.h"
 #include <string.h>
 #include "random.h"
+#include "short_frame.h"
 static char link_frames[32][96];
 static unsigned link_stamp[32],link_head,link_tail;
 static unsigned char link_serial[32];
@@ -18,10 +19,11 @@ int remote_link_enqueue(const char *frame,int serial) {
  tls_os_release_critical(lock);return 1;
 }
 int remote_serial_button(char action) {
- static unsigned seq,session;u8 mac[6];char frame[96];
+ static unsigned seq,session;u8 mac[6];char frame[96],id[20];
  if(!session&&(random_get_bytes(&session,sizeof(session))!=0||!session))return 0;
  tls_get_mac_addr(mac);
- snprintf(frame,sizeof(frame),"REV,%02x%02x%02x%02x%02x%02x-%08lx-%08lx-%u,%c\n",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],(unsigned long)session,(unsigned long)tls_os_get_time(),++seq,action);
+ if(seq==0xffffffffu){session=0;seq=0;return 0;}
+ short_id(id,mac,session,++seq);snprintf(frame,sizeof(frame),"R%c%s\n",action,id);
  return remote_link_enqueue(frame,1);
 }
 static receiver_core core;
@@ -36,8 +38,10 @@ static void set_output(int channel,int high){
  printf("RX_GPIO out=%d pin_enum=%d level=%d read=%d active=%d tick=%lu\n",channel+1,(int)outputs[channel],level,tls_gpio_read(outputs[channel]),high,(unsigned long)tls_os_get_time());
 }
 static void reply_ack(const char *id,char action,const char *state) {
- char frame[128];int length;
- snprintf(frame,sizeof(frame),"ACK,%s,%c,TIMER,%d,%s\n",id,action,action-'a'+1,state);
+ char frame[128];int length,i,compact=0;
+ for(i=0;i<32;i++)if(core.records[i].state&&!strcmp(core.records[i].id,id)){compact=core.records[i].compact;break;}
+ if(compact)snprintf(frame,sizeof(frame),"%c%c%s\n",!strcmp(state,"DONE")?'K':'S',action,id);
+ else snprintf(frame,sizeof(frame),"ACK,%s,%c,TIMER,%d,%s\n",id,action,action-'a'+1,state);
  length=strlen(frame);
  if(tls_uart_write(TLS_UART_5,frame,length)!=WM_SUCCESS)printf("RX_ACK_WRITE_FAILED\n");
  printf("RX_OUT%d %s id=%s\n",action-'a'+1,state,id);

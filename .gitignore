@@ -23,6 +23,7 @@ w801-sdk/wm_sdk_w80x_20211115/app/*
 !w801-sdk/wm_sdk_w80x_20211115/app/wifi_provision.c
 !w801-sdk/wm_sdk_w80x_20211115/app/wifi_provision.h
 !w801-sdk/wm_sdk_w80x_20211115/app/provision_form.h
+!w801-sdk/wm_sdk_w80x_20211115/app/short_frame.h
 *.log
 *.pdf
 *.zip
