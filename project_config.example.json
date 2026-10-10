@@ -73,7 +73,7 @@
       1,
       1
     ],
-    "serial_heartbeat_interval_ms": 30000,
+    "serial_heartbeat_interval_ms": 600000,
     "serial_heartbeat_payload": "HB,W801\r\n",
     "transport_select_gpio": "PA11"
   },

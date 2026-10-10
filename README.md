@@ -61,7 +61,7 @@ PA11 选择 DTU 后，PA0～PA9 按钮仅走 UART5，上传不等待 WiFi；WiFi
 
 发送端队列最多 31 条，超过 5 秒的旧命令不发送，断网/认证失效清队列，不自动重发结果不明的动作。回执为可选的独立查询，不阻塞正常按键发送。DTU 调试口路径上尚未确认 ACK 上传到平台，DONE 日志不等于平台收到回执。
 
-PA12 每 30 秒异步提交 `HB,W801\r\n`，USB 日志为 SERIAL_HEARTBEAT QUEUED/FAILED；QUEUED 表示已提交 UART 驱动，不能证明 DTU 已接收或被唤醒。DTU 本身的 30 秒业务心跳是另一项平台配置。
+PA12 每 10 分钟（600000ms）异步提交 `HB,W801\r\n`，上电后首次发送也等待 10 分钟；USB 日志为 SERIAL_HEARTBEAT QUEUED/FAILED；QUEUED 表示已提交 UART 驱动，不能证明 DTU 已接收或被唤醒。DTU 本身的 30 秒业务心跳是另一项平台配置，此次未修改。
 
 ## 自动 Token 续期
 
@@ -69,7 +69,7 @@ PA12 每 30 秒异步提交 `HB,W801\r\n`，USB 日志为 SERIAL_HEARTBEAT QUEUE
 
 失败退避为 5、10、20、40、60 秒，之后最多每 60 秒重试；空闲时每分钟读设备信息检测认证状态。续期期间按键不会补发。账号/密码变更、平台不可达时仍可能失败，日志输出 AUTH_RENEW_FAILED 和 AUTH_RETRY_IN。配置内的 authentication 是模式记录，自动续期当前由源码固定启用。
 
-已使用真正过期的 Token 在 COM5 实测 TOKEN_EXPIRED → AUTH_RENEW_START → AUTH_RENEW_OK → DEVICE_READY。COM4 的控制解析、1 秒输出复位及两块板 30 秒串口心跳也已验证。长时间运行、故障恢复及正式业务口闭环验收尚未完成。
+已使用真正过期的 Token 在 COM5 实测 TOKEN_EXPIRED → AUTH_RENEW_START → AUTH_RENEW_OK → DEVICE_READY。COM4 的控制解析、1 秒输出复位及旧版两块板 30 秒串口心跳已验证；新版 10 分钟心跳的实际周期尚需部署后观察。长时间运行、故障恢复及正式业务口闭环验收尚未完成。
 
 ## 配置、编译、烧录
 
