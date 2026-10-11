@@ -8,6 +8,8 @@ stub=r'''
 #include <assert.h>
 #include <stdio.h>
 typedef unsigned char u8;
+typedef int tls_os_sem_t;
+#define TLS_OS_SUCCESS 0
 #define HZ 100
 #define REMOTE_TRANSPORT_SELECT_PIN 11
 #define WM_GPIO_DIR_INPUT 0
@@ -15,6 +17,9 @@ typedef unsigned char u8;
 static int serial_sender,authenticated,net_task,key_task,ack_task;
 static int net_stack[4],key_stack[4],ack_stack[4];
 static int values[5],sample,created,configured;
+static tls_os_sem_t *network_wake;
+static void remote_power_start(void){}
+static int tls_os_sem_create(tls_os_sem_t **s,unsigned count){static int sem;*s=&sem;return 0;}
 static void network_entry(void *p){}
 static void keys_entry(void *p){}
 static void ack_entry(void *p){}

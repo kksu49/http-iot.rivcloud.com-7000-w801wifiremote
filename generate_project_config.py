@@ -37,3 +37,8 @@ if len(levels)!=10 or any(v not in (0,1) for v in levels):raise ValueError('Inva
 with (app/'remote_board.h').open('a',encoding='utf-8') as f:f.write('#define REMOTE_OUTPUT_LEVELS {'+','.join(str(v) for v in levels)+'}\n')
 print('Firmware configuration generated; secrets omitted')
 with (app/'remote_board.h').open('a',encoding='utf-8') as f:f.write('#define REMOTE_TRANSPORT_SELECT_PIN '+pin(role_pin)+'\n')
+power=c.get('power_save',{})
+enabled=power.get('wifi_modem_sleep',True);hold=power.get('awake_after_button_ms',3000)
+if not isinstance(enabled,bool) or not isinstance(hold,int) or isinstance(hold,bool) or not 1000<=hold<=30000:raise ValueError('Invalid power-save configuration')
+with (app/'remote_board.h').open('a',encoding='utf-8') as f:
+    f.write('#define REMOTE_WIFI_POWER_SAVE '+str(int(enabled))+'\n#define REMOTE_POWER_AWAKE_MS '+str(hold)+'\n')

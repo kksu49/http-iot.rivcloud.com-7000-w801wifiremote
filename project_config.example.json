@@ -112,5 +112,9 @@
       "verified_uplink_count": 2
     },
     "automatic_power_recovery": "requires external controlled DTU power circuit; not installed or validated"
+  },
+  "power_save": {
+    "wifi_modem_sleep": true,
+    "awake_after_button_ms": 3000
   }
 }

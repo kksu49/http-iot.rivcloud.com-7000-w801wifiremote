@@ -13,6 +13,7 @@
 #include "remote_board.h"
 #include "wifi_provision.h"
 #include "short_frame.h"
+#include "remote_power.h"
 
 #define BASE "http://iot.rivcloud.com:7000/prod-api"
 #define IMEI DEPLOY_IMEI
@@ -36,6 +37,7 @@ static const enum tls_io_name keys[]=REMOTE_BUTTON_PINS;
 extern int remote_serial_button(char action);
 extern int remote_link_enqueue(const char *frame,int serial);
 static int serial_sender;
+static tls_os_sem_t *network_wake;
 static int success(cJSON *root);
 static void reverse_rows(cJSON *root) {
  static double cursor;
@@ -292,7 +294,11 @@ static void network_entry(void *arg) {
             if((unsigned)(tls_os_get_time()-stamp)>5*HZ)printf("KEY %c STALE_NOT_SENT\n",action);
             else {busy=1;send_action(action);busy=0;}
         }
-        tls_os_time_delay(1);
+        /* Sleep the idle network task; button enqueue releases immediately.
+           Keep a one-second timeout for connection/authentication upkeep. */
+        if(action)tls_os_time_delay(1);
+        else if(network_wake)tls_os_sem_acquire(network_wake,HZ);
+        else tls_os_time_delay(1);
     }
 }
 static void keys_entry(void *arg) {
@@ -310,12 +316,14 @@ static void keys_entry(void *arg) {
             if(!armed[i])continue;
             if(++count[i]<3)continue;
             armed[i]=0;
+            remote_power_activity();
             if(serial_sender){printf(remote_serial_button('a'+i)?"KEY %c SERIAL_QUEUED\n":"KEY %c SERIAL_NOT_QUEUED\n",'a'+i);continue;}
             if(!ip_ready||!authenticated||!device_ready)printf("KEY %c REJECTED_OFFLINE\n",'a'+i);
             else {
                 int added=0;u32 lock=tls_os_set_critical();
                 if(ip_ready&&authenticated&&device_ready&&(queue_head+1)%32!=queue_tail){commands[queue_head]='a'+i;command_time[queue_head]=tls_os_get_time();queue_head=(queue_head+1)%32;added=1;}
                 tls_os_release_critical(lock);
+                if(added&&network_wake)tls_os_sem_release(network_wake);
                 printf(added?"KEY %c QUEUED\n":"KEY %c NOT_QUEUED (offline or full)\n",'a'+i);
             }
         }
@@ -325,6 +333,7 @@ static void keys_entry(void *arg) {
             printf("GPIOA_CONFIG afsel=%08lx dir=%08lx pull=%08lx\n",(unsigned long)tls_reg_read32(HR_GPIO_AF_SEL),(unsigned long)tls_reg_read32(HR_GPIO_DIR),(unsigned long)tls_reg_read32(HR_GPIO_PULLUP_EN));
             last_report=tls_os_get_time();
         }
+        remote_power_update(!serial_sender&&ip_ready&&authenticated&&device_ready&&!wifi_provision_active(),busy);
         tls_os_time_delay(HZ/100?HZ/100:1);
     }
 }
@@ -340,6 +349,8 @@ void remote_sender_start(void) {
         tls_os_time_delay(HZ/100?HZ/100:1);
     }
     serial_sender=low_samples==5;
+    remote_power_start();
+    if(tls_os_sem_create(&network_wake,0)!=TLS_OS_SUCCESS){network_wake=0;printf("POWER_NETWORK_WAKE_FALLBACK\n");}
     printf("BUTTON_TRANSPORT %s select_pin_enum=%d low_samples=%u/5 mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",(int)REMOTE_TRANSPORT_SELECT_PIN,low_samples,text);
     authenticated=1;
     printf("\nREMOTE_W801_SENDER_V0.8: PA0..PA9 => a..j; optional ACK\n");
