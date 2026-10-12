@@ -10,7 +10,10 @@ def pin(v):
     if n>(15 if v[1]=='A' else 31):raise ValueError('Invalid GPIO range')
     return 'WM_IO_P'+v[1]+'_'+str(n).zfill(2)
 role_pin=b.get('transport_select_gpio','PA11')
-allpins=b['buttons']+b['receiver_outputs']+[b['receiver_rx'],b['receiver_tx'],c['provisioning']['button_gpio'],role_pin]
+battery=c.get('battery',{})
+battery_enabled=battery.get('enabled',False)
+battery_pins=([battery.get('adc_gpio')]+battery.get('led_pins',[])) if battery_enabled else []
+allpins=battery_pins+b['buttons']+b['receiver_outputs']+[b['receiver_rx'],b['receiver_tx'],c['provisioning']['button_gpio'],role_pin]
 if len(b['buttons'])!=10 or len(b['receiver_outputs'])!=10 or len(set(allpins))!=len(allpins):raise ValueError('GPIO conflict or invalid channel count')
 if {'PB19','PB20'}&set(allpins):raise ValueError('Download UART pins reserved')
 if b['receiver_uart']!=5 or b['receiver_data_bits']!=8 or b['receiver_stop_bits']!=1 or b['receiver_parity']!='none':raise ValueError('This adapter supports UART5 8N1')
@@ -42,3 +45,30 @@ enabled=power.get('wifi_modem_sleep',True);hold=power.get('awake_after_button_ms
 if not isinstance(enabled,bool) or not isinstance(hold,int) or isinstance(hold,bool) or not 1000<=hold<=30000:raise ValueError('Invalid power-save configuration')
 with (app/'remote_board.h').open('a',encoding='utf-8') as f:
     f.write('#define REMOTE_WIFI_POWER_SAVE '+str(int(enabled))+'\n#define REMOTE_POWER_AWAKE_MS '+str(hold)+'\n')
+
+if battery_enabled:
+    if battery['adc_gpio']!='PA1' or battery['adc_channel']!=0 or len(battery['led_pins'])!=4:raise ValueError('Battery requires PA1 ADC0 and four distinct LEDs')
+    t=battery['thresholds_mv']
+    if len(t)!=4 or any(not isinstance(v,int) for v in t) or not 3000<=t[0]<t[1]<t[2]<t[3]<=4200:raise ValueError('Invalid battery thresholds')
+    for k in ['divider_top_ohms','divider_bottom_ohms']:
+        if not isinstance(battery[k],int) or not 1000<=battery[k]<=1000000:raise ValueError('Invalid divider')
+    if 4300*battery['divider_bottom_ohms']/(battery['divider_top_ohms']+battery['divider_bottom_ohms'])>2200:raise ValueError('ADC divider exceeds safe design input')
+    if not 900<=battery['calibration_permille']<=1100 or not 1000<=battery['display_ms']<=30000:raise ValueError('Invalid battery calibration/display')
+with (app/'remote_board.h').open('a',encoding='utf-8') as f:
+    f.write('#define REMOTE_BATTERY_ENABLED '+str(int(battery_enabled))+'\n')
+    if battery_enabled:
+        f.write('#define REMOTE_BATTERY_LEDS {'+','.join(pin(p) for p in battery['led_pins'])+'}\n')
+        for k in ['divider_top_ohms','divider_bottom_ohms','calibration_permille','display_ms']:
+            f.write('#define BATTERY_'+k.upper()+' '+str(battery[k])+'\n')
+        f.write('#define BATTERY_THRESHOLDS {'+','.join(map(str,t))+'}\n')
+
+networks=w.get('networks',[{'ssid':w['ssid'],'password':w['password']}])
+if not isinstance(networks,list) or not 1<=len(networks)<=5:raise ValueError('Require one to five Wi-Fi networks')
+seen=set()
+for n in networks:
+    name,secret=n['ssid'],n['password']
+    if not isinstance(name,str) or not isinstance(secret,str) or not 1<=len(name.encode())<=32 or len(secret.encode())>64 or (secret and len(secret.encode())<8) or name in seen:raise ValueError('Invalid or duplicate Wi-Fi network')
+    seen.add(name)
+with (app/'remote_config.h').open('a',encoding='utf-8') as f:
+    f.write('#define REMOTE_WIFI_DEFAULT_COUNT '+str(len(networks))+'\n')
+    f.write('#define REMOTE_WIFI_DEFAULTS {'+','.join('{'+json.dumps(n['ssid'])+','+json.dumps(n['password'])+'}' for n in networks)+'}\n')

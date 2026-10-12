@@ -14,6 +14,7 @@
 #include "wifi_provision.h"
 #include "short_frame.h"
 #include "remote_power.h"
+#include "remote_battery.h"
 
 #define BASE "http://iot.rivcloud.com:7000/prod-api"
 #define IMEI DEPLOY_IMEI
@@ -304,6 +305,7 @@ static void network_entry(void *arg) {
 static void keys_entry(void *arg) {
     int count[10]={0},release[10]={0},armed[10]={0},i,low;
     unsigned last_report=0;int mask;
+    remote_battery_start(!serial_sender);
     for(i=0;i<10;i++){
         tls_gpio_cfg(keys[i],WM_GPIO_DIR_INPUT,WM_GPIO_ATTR_PULLHIGH);
         printf("KEY_MAP index=%d enum=%d action=%c\n",i,(int)keys[i],'a'+i);
@@ -317,6 +319,7 @@ static void keys_entry(void *arg) {
             if(++count[i]<3)continue;
             armed[i]=0;
             remote_power_activity();
+            if(!serial_sender)remote_battery_request();
             if(serial_sender){printf(remote_serial_button('a'+i)?"KEY %c SERIAL_QUEUED\n":"KEY %c SERIAL_NOT_QUEUED\n",'a'+i);continue;}
             if(!ip_ready||!authenticated||!device_ready)printf("KEY %c REJECTED_OFFLINE\n",'a'+i);
             else {
@@ -329,7 +332,7 @@ static void keys_entry(void *arg) {
         }
         if((unsigned)(tls_os_get_time()-last_report)>30*HZ) {
             mask=0;for(i=0;i<10;i++)if(!tls_gpio_read(keys[i]))mask|=1<<i;
-            printf("GPIO_LOW_MASK=%03x busy=%d (bit0=PA0 bit9=PA9)\n",mask,busy);
+            printf("GPIO_LOW_MASK=%03x busy=%d (see KEY_MAP for current pins)\n",mask,busy);
             printf("GPIOA_CONFIG afsel=%08lx dir=%08lx pull=%08lx\n",(unsigned long)tls_reg_read32(HR_GPIO_AF_SEL),(unsigned long)tls_reg_read32(HR_GPIO_DIR),(unsigned long)tls_reg_read32(HR_GPIO_PULLUP_EN));
             last_report=tls_os_get_time();
         }
@@ -353,7 +356,7 @@ void remote_sender_start(void) {
     if(tls_os_sem_create(&network_wake,0)!=TLS_OS_SUCCESS){network_wake=0;printf("POWER_NETWORK_WAKE_FALLBACK\n");}
     printf("BUTTON_TRANSPORT %s select_pin_enum=%d low_samples=%u/5 mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",(int)REMOTE_TRANSPORT_SELECT_PIN,low_samples,text);
     authenticated=1;
-    printf("\nREMOTE_W801_SENDER_V0.8: PA0..PA9 => a..j; optional ACK\n");
+    printf("\nREMOTE_W801_SENDER_V0.8: configured buttons => a..j; optional ACK\n");
     tls_os_task_create(&net_task,"remote_net",network_entry,0,(u8*)net_stack,sizeof(net_stack),33,0);
     tls_os_task_create(&key_task,"remote_keys",keys_entry,0,(u8*)key_stack,sizeof(key_stack),32,0);
     tls_os_task_create(&ack_task,"remote_ack",ack_entry,0,(u8*)ack_stack,sizeof(ack_stack),34,0);

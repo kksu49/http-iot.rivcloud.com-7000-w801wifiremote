@@ -2,7 +2,14 @@
   "schema_version": 1,
   "wifi": {
     "ssid": "YOUR_WIFI_SSID",
-    "password": "YOUR_WIFI_PASSWORD"
+    "password": "YOUR_WIFI_PASSWORD",
+    "networks": [
+      {
+        "ssid": "YOUR_WIFI_SSID",
+        "password": "YOUR_WIFI_PASSWORD"
+      }
+    ],
+    "max_saved_networks": 5
   },
   "iot": {
     "management_base_url": "http://iot.rivcloud.com:7000/prod-api",
@@ -29,7 +36,7 @@
     "debug_uart_baud": 115200,
     "buttons": [
       "PA0",
-      "PA1",
+      "PB3",
       "PA2",
       "PA3",
       "PA4",
@@ -43,11 +50,11 @@
     "receiver_outputs": [
       "PB5",
       "PB25",
-      "PB26",
-      "PB18",
-      "PB17",
+      "PB6",
+      "PB7",
+      "PB8",
       "PB16",
-      "PB11",
+      "PB9",
       "PB0",
       "PB1",
       "PB2"
@@ -64,11 +71,11 @@
     "output_on_levels": [
       0,
       0,
+      1,
+      1,
+      1,
       0,
-      0,
-      0,
-      0,
-      0,
+      1,
       1,
       1,
       1
@@ -87,8 +94,8 @@
   },
   "notes": [
     "Token 过期后固件自动重新登录；认证方式和行为字段部分为部署记录。",
-    "板载 a~g LED 低电平有效，h~j 外接输出高电平有效。",
-    "实际配置、日志和固件只保留本机，不提交 GitHub。"
+    "实际配置、日志和固件只保留本机，不提交 GitHub。",
+    "W801 电量版本：b按键PB3，PA1为ADC；PB11/17/18/26专用电量灯，控制c/d/e/g迁到PB6/7/8/9。"
   ],
   "provisioning": {
     "enabled": true,
@@ -116,5 +123,26 @@
   "power_save": {
     "wifi_modem_sleep": true,
     "awake_after_button_ms": 3000
+  },
+  "battery": {
+    "enabled": true,
+    "adc_gpio": "PA1",
+    "adc_channel": 0,
+    "divider_top_ohms": 100000,
+    "divider_bottom_ohms": 100000,
+    "calibration_permille": 1000,
+    "led_pins": [
+      "PB11",
+      "PB17",
+      "PB18",
+      "PB26"
+    ],
+    "display_ms": 5000,
+    "thresholds_mv": [
+      3500,
+      3700,
+      3850,
+      4100
+    ]
   }
 }
