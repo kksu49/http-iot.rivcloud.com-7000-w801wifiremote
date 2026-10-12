@@ -33,6 +33,11 @@ static int tls_wifi_connect(u8 *ssid,unsigned len,u8 *pass,unsigned plen){order[
 '''
 test=r'''
 int main(void){
+ assert(provision_page_request("GET / HTTP/1.1\r\n"));
+ assert(provision_page_request("GET /?setup=1 HTTP/1.1\r\n"));
+ assert(provision_page_request("GET /generate_204 HTTP/1.1\r\n"));
+ assert(provision_page_request("GET /hotspot-detect.html HTTP/1.1\r\n"));
+ assert(!provision_page_request("POST /save HTTP/1.1\r\n"));
  wifi_record input={0},first,second;
  memset(flash,255,sizeof(flash));input.count=2;
  strcpy(input.items[0].ssid,"first<&'");strcpy(input.items[0].password,"secret123");
@@ -61,6 +66,6 @@ int main(void){
 }
 '''
 with tempfile.TemporaryDirectory() as directory:
- p=Path(directory);(p/'test.c').write_text('#include "'+(app/'wifi_profiles.h').as_posix()+'"\n'+stub+save+page+connection_stub+step+test,encoding='utf-8')
+ p=Path(directory);(p/'test.c').write_text('#include "'+(app/'wifi_profiles.h').as_posix()+'"\n#include "'+(app/'provision_form.h').as_posix()+'"\n'+stub+save+page+connection_stub+step+test,encoding='utf-8')
  subprocess.run(['C:/MinGW/bin/gcc.exe','-std=c99',str(p/'test.c'),'-o',str(p/'test.exe')],check=True)
  subprocess.run([str(p/'test.exe')],check=True)

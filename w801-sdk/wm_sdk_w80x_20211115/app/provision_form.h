@@ -1,6 +1,9 @@
 #ifndef PROVISION_FORM_H
 #define PROVISION_FORM_H
 #include <string.h>
+/* Captive-portal probes and browser paths should all open the setup form.
+   Compare only the method prefix: sizeof("GET / ") includes a trailing NUL. */
+static int provision_page_request(const char *request){return !strncmp(request,"GET ",4);}
 static int form_hex(char c){if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;}
 static int form_value(const char *body,const char *name,char *out,unsigned capacity){
  unsigned len=strlen(name),n=0;const char *p=body;

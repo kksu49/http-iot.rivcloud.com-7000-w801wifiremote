@@ -81,7 +81,7 @@ static void serve(int fd){
  setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
  for(;;){n=recv(fd,buffer+total,sizeof(buffer)-1-total,0);if(n<=0){closesocket(fd);return;}total+=n;buffer[total]=0;
   body=strstr(buffer,"\r\n\r\n");if(body){body+=4;
-   if(!strncmp(buffer,"GET / ",7)){respond(fd,"200 OK",make_page());closesocket(fd);return;}
+   if(provision_page_request(buffer)){respond(fd,"200 OK",make_page());closesocket(fd);return;}
    if(strncmp(buffer,"POST /save ",11)){respond(fd,"404 Not Found","Not found");closesocket(fd);return;}
    length_header=strstr(buffer,"\r\nContent-Length: ");if(!length_header)length_header=strstr(buffer,"\r\ncontent-length: ");
    if(!length_header){respond(fd,"411 Length Required","Missing length");closesocket(fd);return;}
