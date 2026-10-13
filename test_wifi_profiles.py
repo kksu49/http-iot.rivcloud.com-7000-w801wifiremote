@@ -25,8 +25,8 @@ b=source.index('  }else{',a)
 step='static void connection_step(void){\n'+source[a:b]+'  }\n}\n'
 connection_stub=r'''
 #define HZ 100
-static int station_up,ap_active,attempting,attempt,current,start_index,was_up,calls,order[20];
-static unsigned now,last_try;
+static int station_up,ap_active,attempting,attempt,current,start_index,was_up,ever_up,retry_wait,calls,order[20];
+static unsigned now,last_try,retry_since;
 static void tls_wifi_disconnect(void){}
 static int enter_ap(void){ap_active=1;return 1;}
 static int tls_wifi_connect(u8 *ssid,unsigned len,u8 *pass,unsigned plen){order[calls++]=!strcmp((char*)ssid,"backup")?1:0;return 0;}
@@ -54,14 +54,23 @@ int main(void){
  memset(&input,0,sizeof(input));assert(save_profiles(&input));assert(wifi_record_valid(&profiles)&&profiles.count==0);
  assert(wifi_next(5,3,0)==3&&wifi_next(5,3,2)==0&&wifi_next(0,0,0)==-1);
  assert(wifi_newer(0,0xffffffffu));
- profiles=first;station_up=ap_active=attempting=attempt=current=start_index=was_up=calls=0;now=0;
+ profiles=first;station_up=ap_active=attempting=attempt=current=start_index=was_up=ever_up=retry_wait=calls=0;now=0;
  connection_step();assert(calls==1&&order[0]==0);
  now=14*HZ;connection_step();assert(calls==1);
  now=15*HZ;connection_step();assert(calls==2&&order[1]==1);
  station_up=1;connection_step();now=100*HZ;connection_step();assert(calls==2&&!ap_active);
  station_up=0;connection_step();assert(calls==3&&order[2]==1);
  now+=15*HZ;connection_step();assert(calls==4&&order[3]==0);
- now+=15*HZ;connection_step();assert(ap_active&&profiles.count==2);
+ now+=15*HZ;connection_step();assert(!ap_active&&retry_wait&&profiles.count==2);
+ now+=29*HZ;connection_step();assert(calls==4&&!ap_active);
+ now+=HZ;connection_step();assert(calls==5&&order[4]==1&&!ap_active);
+ station_up=1;connection_step();assert(!retry_wait&&ever_up);
+ /* A never-connected boot still falls back to provisioning. */
+ station_up=ap_active=attempting=attempt=current=start_index=was_up=ever_up=retry_wait=0;now=0;
+ connection_step();now+=15*HZ;connection_step();now+=15*HZ;connection_step();assert(ap_active);
+ /* Unsigned backoff survives tick rollover. */
+ ap_active=0;ever_up=1;retry_wait=1;retry_since=0xffffff00u;attempting=0;now=retry_since+30*HZ;
+ connection_step();assert(!retry_wait&&!ap_active);
  puts("Wi-Fi tests passed: five slots, escaping, no password echo, interrupted writes preserve old record, CRC, empty list, fallback order, wrap");return 0;
 }
 '''

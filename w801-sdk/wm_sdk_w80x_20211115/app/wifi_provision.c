@@ -110,7 +110,7 @@ static void serve(int fd){
 }
 
 static void provision_entry(void *arg){
- int listener=-1,attempting=0,attempt=0,current=0,start_index=0,was_up=0;unsigned last_try=0,held=0;int pressed=0,latch=0;
+ int listener=-1,attempting=0,attempt=0,current=0,start_index=0,was_up=0,ever_up=0,retry_wait=0;unsigned last_try=0,held=0,retry_since=0;int pressed=0,latch=0;
  u8 mode=TLS_PARAM_IEEE80211_INFRA;
  tls_gpio_cfg(REMOTE_PROVISION_PIN,WM_GPIO_DIR_INPUT,WM_GPIO_ATTR_PULLHIGH);
  tls_param_set(TLS_PARAM_ID_WPROTOCOL,&mode,FALSE);
@@ -119,12 +119,17 @@ static void provision_entry(void *arg){
   if(low){if(!pressed){pressed=1;held=now;}if(!latch&&(unsigned)(now-held)>=5*HZ){latch=1;if(listener>=0){closesocket(listener);listener=-1;}enter_ap();}}
   else{pressed=latch=0;}
   if(!ap_active){
-   if(station_up){was_up=1;attempting=0;attempt=0;start_index=current;}
+   if(station_up){was_up=ever_up=1;retry_wait=0;attempting=0;attempt=0;start_index=current;}
    else{
-    if(was_up){was_up=0;attempt=0;attempting=0;start_index=current;printf("WIFI_FAILOVER_START\n");}
+    if(was_up){was_up=0;retry_wait=0;attempt=0;attempting=0;start_index=current;printf("WIFI_FAILOVER_START\n");}
     if(attempting&&(unsigned)(now-last_try)>=15*HZ){tls_wifi_disconnect();attempting=0;attempt++;}
-    if(!attempting){
-     if(!profiles.count||attempt>=(int)profiles.count){enter_ap();attempt=0;}
+    if(retry_wait&&(unsigned)(now-retry_since)>=30*HZ){retry_wait=0;attempt=0;}
+    if(!attempting&&!retry_wait){
+     if(!profiles.count){enter_ap();attempt=0;}
+     else if(attempt>=(int)profiles.count){
+      if(ever_up){retry_wait=1;retry_since=now;printf("WIFI_RETRY_BACKOFF seconds=30 saved=%lu\n",(unsigned long)profiles.count);}
+      else{enter_ap();attempt=0;}
+     }
      else{
       current=wifi_next(profiles.count,start_index,attempt);last_try=now;attempting=1;
       printf("WIFI_PROFILE_TRY slot=%d total=%lu\n",current+1,(unsigned long)profiles.count);
