@@ -3,4 +3,5 @@
 void wifi_provision_start(void);
 void wifi_provision_station_status(int connected);
 int wifi_provision_active(void);
+void wifi_provision_network_failed(void);
 #endif

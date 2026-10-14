@@ -15,12 +15,16 @@
 #include "short_frame.h"
 #include "remote_power.h"
 #include "remote_battery.h"
+#include "platform_health.h"
 
 #define BASE "http://iot.rivcloud.com:7000/prod-api"
 #define IMEI DEPLOY_IMEI
 static OS_STK net_stack[4096], key_stack[512],ack_stack[4096];
 static tls_os_task_t net_task, key_task,ack_task;
-static volatile int ip_ready, authenticated, device_ready, busy;
+static volatile int ip_ready, authenticated, device_ready, busy, platform_ready;
+static OS_STK health_stack[4096];
+static tls_os_task_t health_task;
+static char health_reply[8192];
 static char target_key[96]=DEPLOY_PRODUCT_KEY,target_imei[24]=DEPLOY_IMEI;
 static int target_id=DEPLOY_DEVICE_ID,target_product=DEPLOY_PRODUCT_ID;
 static char commands[32];
@@ -75,10 +79,10 @@ static void expire_auth(unsigned generation) {
 }
 
 static void status_event(u8 status) {
-    if(status==NETIF_IP_NET_UP&&!wifi_provision_active()) {ip_ready=1;wifi_provision_station_status(1); printf("WIFI_IP_READY\n");}
+    if(status==NETIF_IP_NET_UP&&!wifi_provision_active()) {platform_ready=0;ip_ready=1;wifi_provision_station_status(1); printf("WIFI_IP_READY\n");}
     if(status==NETIF_WIFI_DISCONNECTED) {
         u32 lock=tls_os_set_critical();
-        ip_ready=0;connection_epoch++;queue_tail=queue_head;
+        ip_ready=platform_ready=device_ready=0;connection_epoch++;queue_tail=queue_head;
         wifi_provision_station_status(0);
         memset(pending_action,0,sizeof(pending_action));
         tls_os_release_critical(lock);
@@ -96,7 +100,8 @@ static int connect_bounded(int fd,struct sockaddr_in *addr) {
     }
     nonblocking=0;return ioctlsocket(fd,FIONBIO,&nonblocking)==0;
 }
-static cJSON *request_buffer(char *url,int post,int auth,char *reply,unsigned capacity) {
+static cJSON *request_buffer_status(char *url,int post,int auth,char *reply,unsigned capacity,int *reachable) {
+    if(reachable)*reachable=0;
     char header[3000],auth_token[2048],*body,*cursor,*end,*out;
     struct hostent *host;struct sockaddr_in addr;struct timeval timeout={10,0};
     int fd,n,sent=0,length,total=0,status=0,chunked=0;unsigned chunk,started=tls_os_get_time(),epoch=connection_epoch;
@@ -121,6 +126,7 @@ static cJSON *request_buffer(char *url,int post,int auth,char *reply,unsigned ca
     *body=0;chunked=strstr(reply,"Transfer-Encoding: chunked")!=0||strstr(reply,"transfer-encoding: chunked")!=0;
     body+=4;
     if(auth&&status==401){expire_auth(generation);printf("TOKEN_EXPIRED\n");}
+    if(reachable)*reachable=platform_response_reachable(status,0);
     if(status!=200){printf("HTTP_STATUS %d\n",status);return 0;}
     if(chunked){
         cursor=body;out=body;end=reply+total;
@@ -138,12 +144,42 @@ static cJSON *request_buffer(char *url,int post,int auth,char *reply,unsigned ca
     }
     root=cJSON_Parse(body);
     if(!root)printf("HTTP_JSON_PARSE_FAILED\n");
+    if(reachable&&root){cJSON *code=cJSON_GetObjectItem(root,"code");*reachable=platform_response_reachable(status,code&&(code->type==cJSON_Number||code->type==cJSON_String));}
     if(auth&&root){
         cJSON *code=cJSON_GetObjectItem(root,"code");
         int value=code?(code->valuestring?atoi(code->valuestring):code->valueint):0;
         if(value==401){expire_auth(generation);printf("TOKEN_EXPIRED\n");}
     }
     return root;
+}
+static cJSON *request_buffer(char *url,int post,int auth,char *reply,unsigned capacity){
+    return request_buffer_status(url,post,auth,reply,capacity,0);
+}
+static void health_entry(void *arg){
+    unsigned epoch=~0u,failures=0,last=0;int first=1;
+    for(;;){
+        unsigned now=tls_os_get_time();
+        if(!ip_ready||wifi_provision_active()){first=1;failures=0;}
+        else{
+            if(epoch!=connection_epoch){epoch=connection_epoch;first=1;failures=0;}
+            if(first||(unsigned)(now-last)>=(failures?5:30)*HZ){
+                char url[160];cJSON *root;int reachable=0;unsigned checked_epoch=connection_epoch;
+                snprintf(url,sizeof(url),BASE "/reach/dmp/device/%d",DEPLOY_DEVICE_ID);
+                root=request_buffer_status(url,0,1,health_reply,sizeof(health_reply),&reachable);cJSON_Delete(root);
+                last=tls_os_get_time();first=0;
+                if(ip_ready&&!wifi_provision_active()&&checked_epoch==connection_epoch){
+                    int failed=platform_health_update(&failures,reachable);
+                    printf("PLATFORM_NETWORK_CHECK reachable=%d failures=%u\n",reachable,failures);
+                    if(reachable){platform_ready=1;if(network_wake)tls_os_sem_release(network_wake);}
+                    else if(failed){
+                        u32 lock=tls_os_set_critical();platform_ready=device_ready=0;queue_tail=queue_head;tls_os_release_critical(lock);
+                        wifi_provision_network_failed();first=1;failures=0;
+                    }
+                }
+            }
+        }
+        tls_os_time_delay(HZ);
+    }
 }
 static cJSON *request(char *url,int post,int auth) {
     return request_buffer(url,post,auth,reply,sizeof(reply));
@@ -267,7 +303,7 @@ static void poll_pending(void) {
 }
 static void ack_entry(void *arg) {
     for(;;){
-        if(ip_ready&&authenticated&&device_ready)poll_pending();
+        if(ip_ready&&platform_ready&&authenticated&&device_ready)poll_pending();
         tls_os_time_delay(2*HZ);
     }
 }
@@ -275,7 +311,7 @@ static void network_entry(void *arg) {
     unsigned stamp,last_probe=0,retry_seconds=5;char action;
     tls_netif_add_status_event(status_event);
     for(;;) {
-        if(!ip_ready) {
+        if(!ip_ready||!platform_ready) {
             u32 lock=tls_os_set_critical();queue_tail=queue_head;tls_os_release_critical(lock);
             tls_os_time_delay(HZ);continue;
         }
@@ -321,10 +357,10 @@ static void keys_entry(void *arg) {
             remote_power_activity();
             if(!serial_sender)remote_battery_request();
             if(serial_sender){printf(remote_serial_button('a'+i)?"KEY %c SERIAL_QUEUED\n":"KEY %c SERIAL_NOT_QUEUED\n",'a'+i);continue;}
-            if(!ip_ready||!authenticated||!device_ready)printf("KEY %c REJECTED_OFFLINE\n",'a'+i);
+            if(!ip_ready||!platform_ready||!authenticated||!device_ready)printf("KEY %c REJECTED_OFFLINE\n",'a'+i);
             else {
                 int added=0;u32 lock=tls_os_set_critical();
-                if(ip_ready&&authenticated&&device_ready&&(queue_head+1)%32!=queue_tail){commands[queue_head]='a'+i;command_time[queue_head]=tls_os_get_time();queue_head=(queue_head+1)%32;added=1;}
+                if(ip_ready&&platform_ready&&authenticated&&device_ready&&(queue_head+1)%32!=queue_tail){commands[queue_head]='a'+i;command_time[queue_head]=tls_os_get_time();queue_head=(queue_head+1)%32;added=1;}
                 tls_os_release_critical(lock);
                 if(added&&network_wake)tls_os_sem_release(network_wake);
                 printf(added?"KEY %c QUEUED\n":"KEY %c NOT_QUEUED (offline or full)\n",'a'+i);
@@ -336,7 +372,7 @@ static void keys_entry(void *arg) {
             printf("GPIOA_CONFIG afsel=%08lx dir=%08lx pull=%08lx\n",(unsigned long)tls_reg_read32(HR_GPIO_AF_SEL),(unsigned long)tls_reg_read32(HR_GPIO_DIR),(unsigned long)tls_reg_read32(HR_GPIO_PULLUP_EN));
             last_report=tls_os_get_time();
         }
-        remote_power_update(!serial_sender&&ip_ready&&authenticated&&device_ready&&!wifi_provision_active(),busy);
+        remote_power_update(!serial_sender&&ip_ready&&platform_ready&&authenticated&&device_ready&&!wifi_provision_active(),busy);
         tls_os_time_delay(HZ/100?HZ/100:1);
     }
 }
@@ -357,6 +393,7 @@ void remote_sender_start(void) {
     printf("BUTTON_TRANSPORT %s select_pin_enum=%d low_samples=%u/5 mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",(int)REMOTE_TRANSPORT_SELECT_PIN,low_samples,text);
     authenticated=1;
     printf("\nREMOTE_W801_SENDER_V0.8: configured buttons => a..j; optional ACK\n");
+    if(!serial_sender&&tls_os_task_create(&health_task,"platform_health",health_entry,0,(u8*)health_stack,sizeof(health_stack),36,0)!=WM_SUCCESS)printf("PLATFORM_HEALTH_TASK_FAILED\n");
     tls_os_task_create(&net_task,"remote_net",network_entry,0,(u8*)net_stack,sizeof(net_stack),33,0);
     tls_os_task_create(&key_task,"remote_keys",keys_entry,0,(u8*)key_stack,sizeof(key_stack),32,0);
     tls_os_task_create(&ack_task,"remote_ack",ack_entry,0,(u8*)ack_stack,sizeof(ack_stack),34,0);

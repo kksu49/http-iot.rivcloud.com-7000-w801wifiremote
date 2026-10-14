@@ -12,6 +12,8 @@
 #include <stdlib.h>
 static OS_STK stack[2048];static tls_os_task_t task;
 static volatile int station_up,ap_active;
+static volatile int network_failed;
+void wifi_provision_network_failed(void){network_failed=1;}
 static wifi_record profiles;
 static int active_slot=-1;
 static const wifi_profile defaults[]=REMOTE_WIFI_DEFAULTS;
@@ -119,6 +121,13 @@ static void provision_entry(void *arg){
   if(low){if(!pressed){pressed=1;held=now;}if(!latch&&(unsigned)(now-held)>=5*HZ){latch=1;if(listener>=0){closesocket(listener);listener=-1;}enter_ap();}}
   else{pressed=latch=0;}
   if(!ap_active){
+   if(network_failed){
+    network_failed=0;station_up=0;was_up=0;retry_wait=0;attempting=0;attempt=0;
+    start_index=profiles.count?(current+1)%profiles.count:0;
+    tls_wifi_disconnect();
+    printf("WIFI_PLATFORM_FAILOVER next=%d\n",start_index+1);
+    tls_os_time_delay(HZ/5?HZ/5:1);
+   }
    if(station_up){was_up=ever_up=1;retry_wait=0;attempting=0;attempt=0;start_index=current;}
    else{
     if(was_up){was_up=0;retry_wait=0;attempt=0;attempting=0;start_index=current;printf("WIFI_FAILOVER_START\n");}

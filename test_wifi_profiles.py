@@ -25,6 +25,9 @@ b=source.index('  }else{',a)
 step='static void connection_step(void){\n'+source[a:b]+'  }\n}\n'
 connection_stub=r'''
 #define HZ 100
+static int network_failed;
+#define HZ_DELAY_STUB 1
+static void tls_os_time_delay(int n){}
 static int station_up,ap_active,attempting,attempt,current,start_index,was_up,ever_up,retry_wait,calls,order[20];
 static unsigned now,last_try,retry_since;
 static void tls_wifi_disconnect(void){}
@@ -65,6 +68,7 @@ int main(void){
  now+=29*HZ;connection_step();assert(calls==4&&!ap_active);
  now+=HZ;connection_step();assert(calls==5&&order[4]==1&&!ap_active);
  station_up=1;connection_step();assert(!retry_wait&&ever_up);
+ network_failed=1;station_up=1;connection_step();assert(!ap_active&&order[calls-1]==0&&!network_failed);
  /* A never-connected boot still falls back to provisioning. */
  station_up=ap_active=attempting=attempt=current=start_index=was_up=ever_up=retry_wait=0;now=0;
  connection_step();now+=15*HZ;connection_step();now+=15*HZ;connection_step();assert(ap_active);
