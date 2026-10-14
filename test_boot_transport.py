@@ -19,6 +19,7 @@ static int net_stack[4],key_stack[4],ack_stack[4],health_stack[4];
 static int values[5],sample,created,configured;
 static tls_os_sem_t *network_wake;
 static void remote_power_start(void){}
+static void remote_ble_start(int wifi_role){assert(wifi_role==!serial_sender);}
 static int tls_os_sem_create(tls_os_sem_t **s,unsigned count){static int sem;*s=&sem;return 0;}
 static void network_entry(void *p){}
 static void keys_entry(void *p){}

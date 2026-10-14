@@ -31,6 +31,9 @@ w801-sdk/wm_sdk_w80x_20211115/app/*
 !w801-sdk/wm_sdk_w80x_20211115/app/battery_level.h
 !w801-sdk/wm_sdk_w80x_20211115/app/wifi_profiles.h
 !w801-sdk/wm_sdk_w80x_20211115/app/platform_health.h
+!w801-sdk/wm_sdk_w80x_20211115/app/remote_ble.c
+!w801-sdk/wm_sdk_w80x_20211115/app/remote_ble.h
+!w801-sdk/wm_sdk_w80x_20211115/app/ble_command.h
 *.log
 *.pdf
 *.zip

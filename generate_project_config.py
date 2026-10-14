@@ -72,3 +72,15 @@ for n in networks:
 with (app/'remote_config.h').open('a',encoding='utf-8') as f:
     f.write('#define REMOTE_WIFI_DEFAULT_COUNT '+str(len(networks))+'\n')
     f.write('#define REMOTE_WIFI_DEFAULTS {'+','.join('{'+json.dumps(n['ssid'])+','+json.dumps(n['password'])+'}' for n in networks)+'}\n')
+
+ble=c.get('ble_central',{})
+be=ble.get('enabled',False);bn=ble.get('max_connections',7);names=ble.get('peer_names',[])
+if not isinstance(be,bool) or not isinstance(bn,int) or not 1<=bn<=7 or (be and (len(names)!=bn or len(set(names))!=bn or any(not isinstance(n,str) or not 1<=len(n.encode())<=20 for n in names))):raise ValueError('Invalid BLE central configuration')
+for key,lo,hi in [('service_uuid16',1,65535),('command_uuid16',1,65535),('status_uuid16',1,65535),('minimum_command_interval_ms',30,10000),('scan_on_seconds',1,30),('scan_off_seconds',1,300)]:
+    if be and (not isinstance(ble[key],int) or not lo<=ble[key]<=hi):raise ValueError('Invalid BLE parameter')
+with (app/'remote_board.h').open('a',encoding='utf-8') as f:
+    f.write('#define REMOTE_BLE_ENABLED '+str(int(be))+'\n#define REMOTE_BLE_MAX '+str(bn)+'\n')
+    if be:
+        f.write('#define REMOTE_BLE_NAMES {'+','.join(json.dumps(n) for n in names)+'}\n')
+        for key in ['service_uuid16','command_uuid16','status_uuid16','minimum_command_interval_ms','scan_on_seconds','scan_off_seconds']:
+            f.write('#define REMOTE_BLE_'+key.upper()+' '+str(ble[key])+'\n')

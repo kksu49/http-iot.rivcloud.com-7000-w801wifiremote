@@ -16,22 +16,23 @@
 #include "remote_power.h"
 #include "remote_battery.h"
 #include "platform_health.h"
+#include "remote_ble.h"
 
 #define BASE "http://iot.rivcloud.com:7000/prod-api"
 #define IMEI DEPLOY_IMEI
-static OS_STK net_stack[4096], key_stack[512],ack_stack[4096];
+static OS_STK net_stack[2048], key_stack[512],ack_stack[2048];
 static tls_os_task_t net_task, key_task,ack_task;
 static volatile int ip_ready, authenticated, device_ready, busy, platform_ready;
-static OS_STK health_stack[4096];
+static OS_STK health_stack[2048];
 static tls_os_task_t health_task;
-static char health_reply[8192];
+static char health_reply[4096];
 static char target_key[96]=DEPLOY_PRODUCT_KEY,target_imei[24]=DEPLOY_IMEI;
 static int target_id=DEPLOY_DEVICE_ID,target_product=DEPLOY_PRODUCT_ID;
 static char commands[32];
 static unsigned command_time[32];
 static volatile unsigned queue_head,queue_tail;
 static char ack_reply[18000];
-static char token[2048]=DEPLOY_TOKEN, reply[18000];
+static char token[2048]=DEPLOY_TOKEN, reply[8192];
 static unsigned auth_generation;
 static unsigned sequence;
 static unsigned session_id;
@@ -43,6 +44,22 @@ extern int remote_serial_button(char action);
 extern int remote_link_enqueue(const char *frame,int serial);
 static int serial_sender;
 static tls_os_sem_t *network_wake;
+static volatile int ble_activity;
+int remote_sender_wifi_ready(void){return ip_ready&&platform_ready&&authenticated&&device_ready&&!wifi_provision_active();}
+int remote_sender_submit_ble(char action){
+    int result=1;u32 lock;
+    if(action<'a'||action>'j')return 3;
+    if(serial_sender)return 1;
+    lock=tls_os_set_critical();
+    if(ip_ready&&platform_ready&&authenticated&&device_ready){
+        unsigned used=(queue_head+32-queue_tail)%32;
+        if(used>=27)result=2;
+        else{commands[queue_head]=action;command_time[queue_head]=tls_os_get_time();queue_head=(queue_head+1)%32;ble_activity=1;result=0;}
+    }
+    tls_os_release_critical(lock);
+    if(!result&&network_wake)tls_os_sem_release(network_wake);
+    return result;
+}
 static int success(cJSON *root);
 static void reverse_rows(cJSON *root) {
  static double cursor;
@@ -347,6 +364,7 @@ static void keys_entry(void *arg) {
         printf("KEY_MAP index=%d enum=%d action=%c\n",i,(int)keys[i],'a'+i);
     }
     for(;;) {
+        if(ble_activity){u32 lock=tls_os_set_critical();ble_activity=0;tls_os_release_critical(lock);remote_power_activity();remote_battery_request();}
         for(i=0;i<10;i++) {
             low=!tls_gpio_read(keys[i]);
             if(!low){count[i]=0;if(release[i]<3)release[i]++;if(release[i]>=3)armed[i]=1;continue;}
@@ -393,6 +411,7 @@ void remote_sender_start(void) {
     printf("BUTTON_TRANSPORT %s select_pin_enum=%d low_samples=%u/5 mac=%s\n",serial_sender?"DTU_UART":"WIFI_HTTP",(int)REMOTE_TRANSPORT_SELECT_PIN,low_samples,text);
     authenticated=1;
     printf("\nREMOTE_W801_SENDER_V0.8: configured buttons => a..j; optional ACK\n");
+    remote_ble_start(!serial_sender);
     if(!serial_sender&&tls_os_task_create(&health_task,"platform_health",health_entry,0,(u8*)health_stack,sizeof(health_stack),36,0)!=WM_SUCCESS)printf("PLATFORM_HEALTH_TASK_FAILED\n");
     tls_os_task_create(&net_task,"remote_net",network_entry,0,(u8*)net_stack,sizeof(net_stack),33,0);
     tls_os_task_create(&key_task,"remote_keys",keys_entry,0,(u8*)key_stack,sizeof(key_stack),32,0);

@@ -144,5 +144,24 @@
       3850,
       4100
     ]
+  },
+  "ble_central": {
+    "enabled": true,
+    "max_connections": 7,
+    "peer_names": [
+      "W801-BLE-01",
+      "W801-BLE-02",
+      "W801-BLE-03",
+      "W801-BLE-04",
+      "W801-BLE-05",
+      "W801-BLE-06",
+      "W801-BLE-07"
+    ],
+    "service_uuid16": 65520,
+    "command_uuid16": 65521,
+    "status_uuid16": 65522,
+    "minimum_command_interval_ms": 100,
+    "scan_on_seconds": 5,
+    "scan_off_seconds": 25
   }
 }
